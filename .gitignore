@@ -4,3 +4,7 @@
 /testimgs
 /Unsplash
 /unsplashlist.npy
+/utils/__pycache__
+/trainarch/__pycache__
+/modelarch/__pycache__
+/datasetarch/__pycache__
