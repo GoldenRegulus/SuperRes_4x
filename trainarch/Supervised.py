@@ -5,7 +5,7 @@ from torch import optim
 from torch.nn import functional as f
 
 class SuperRes(pl.LightningModule):
-    def __init__(self, model, learning_rate=1e-3, anneal_min_learning_rate=1e-7):
+    def __init__(self, model, learning_rate=5e-4, anneal_min_learning_rate=1e-5):
         super().__init__()
         self.learning_rate = learning_rate
         self.example_input_array = torch.ones((1, 3, 90, 80))
@@ -38,7 +38,7 @@ class SuperRes(pl.LightningModule):
     def configure_optimizers(self):
         optimizer = optim.AdamW(self.parameters(), lr=self.learning_rate)
         scheduler = {
-            'scheduler': optim.lr_scheduler.CosineAnnealingWarmRestarts(optimizer, 250000, eta_min=self.anneal_min, last_epoch=(self.global_step if self.global_step else -1)),
+            'scheduler': optim.lr_scheduler.CosineAnnealingWarmRestarts(optimizer, 25000, eta_min=self.anneal_min, last_epoch=(self.global_step if self.global_step else -1)),
             'interval': 'step'
         }
         return [optimizer], [scheduler]
