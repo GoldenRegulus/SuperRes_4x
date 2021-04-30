@@ -2,7 +2,6 @@ import argparse
 from utils.utils import create_list
 import numpy as np
 from pytorch_lightning import callbacks
-from modelarch.Discriminator import Discriminator
 from modelarch.PAN import PAN
 from trainarch.Supervised import SuperRes
 from pytorch_lightning import Trainer
@@ -20,7 +19,6 @@ if __name__ == '__main__':
     data = np.load('./unsplashlist.npy')
     ds = UnsplashDataset(data, batch_size=32)
     pan = PAN()
-    disc = Discriminator(64)
     lr_callback = callbacks.LearningRateMonitor('step')
     loaded_model_ckpt = ns['checkpoint']
     logdir = ns['logdir']

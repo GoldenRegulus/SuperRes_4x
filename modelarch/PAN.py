@@ -37,8 +37,6 @@ class UPA(nn.Module):
         super().__init__()
         if not hchn:
             hchn = chn
-        # self.xcu = nn.Conv2d(chn, chn*4, 3, 1, 1)
-        # self.xpu = nn.PixelShuffle(2)
         self.xc1 = nn.Conv2d(chn,hchn,3,1,1)
         self.xpa = nn.Conv2d(hchn,hchn,1,1,0)
         self.xc2 = nn.Conv2d(hchn,hchn,3,1,1)
@@ -46,8 +44,6 @@ class UPA(nn.Module):
 
     def forward(self, inp):
         x = interpolate(inp,scale_factor=2,mode='nearest')
-        # x = self.xcu(inp)
-        # x = self.xpu(x)
         x = self.xc1(x)
         xp = self.xpa(x)
         xp = sigmoid(xp)

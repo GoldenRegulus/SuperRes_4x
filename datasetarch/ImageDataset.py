@@ -50,23 +50,11 @@ class UnsplashDataset(pl.LightningDataModule):
         ])
 
     def setup(self, stage = None):
-        
         if stage == 'fit' or stage is None:
-            # self.utrainfull = SSImageDataset(self.data[:-self.test_split], self.transforms, self.transforms, True)
-            # self.utrain, self.uval = random_split(self.utrainfull, [self.train_split, self.val_split])
-            self.utrainfull = SSImageDataset(self.data, self.transforms, self.transforms, True)
-            self.utrain = self.utrainfull
-        # if stage == 'test' or stage is None:
-        #     self.utest = SSImageDataset(self.data[self.test_split:], self.transforms, self.transforms)
+            self.utrain = SSImageDataset(self.data, self.transforms, self.transforms, True)
     
     def train_dataloader(self) -> DataLoader:
         return DataLoader(self.utrain, self.batch_size, num_workers=4, pin_memory=True)
-    
-    # def val_dataloader(self) -> DataLoader:
-    #     return DataLoader(self.uval, self.batch_size*2, num_workers=4)
-    
-    # def test_dataloader(self) -> DataLoader:
-    #     return DataLoader(self.utest, self.batch_size*2, num_workers=4)
     
     def open_image(self, img_string):
         with Image.open(img_string[0]) as image:
