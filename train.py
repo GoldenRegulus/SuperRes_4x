@@ -2,12 +2,13 @@ import argparse
 from utils.utils import create_list
 import numpy as np
 from pytorch_lightning import callbacks
-from modelarch.Discriminator import Discriminator
 from modelarch.PAN import PAN
 from trainarch.Supervised import SuperRes
 from pytorch_lightning import Trainer
 from datasetarch.ImageDataset import UnsplashDataset
-from torch import save, load, jit, ones, quantization, onnx, no_grad
+from torch import jit, ones, onnx, no_grad, quantization
+from torch.utils import mobile_optimizer
+from torch.backends import quantized
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Train models.')
@@ -32,7 +33,7 @@ if __name__ == '__main__':
         if ns['manual_checkpoint']:
             model = SuperRes.load_from_checkpoint(ns['manual_checkpoint'], model=pan)
         model = SuperRes(model=pan)
-        trainer = Trainer(gpus=1,benchmark=True, max_epochs=340, limit_train_batches=0.01, callbacks=[lr_callback, callbacks.QuantizationAwareTraining(observer_type='histogram', input_compatible=True)], default_root_dir=logdir)
+        trainer = Trainer(gpus=1,benchmark=True, max_epochs=16, callbacks=[lr_callback, callbacks.QuantizationAwareTraining(qconfig=quantization.get_default_qat_qconfig('qnnpack'), observer_type='histogram', input_compatible=True)], default_root_dir=logdir)
         trainer.fit(model, datamodule=ds) 
     # save(model, 'models/pan/pan4.pt')
     print('Testing: 640x480')
@@ -44,8 +45,9 @@ if __name__ == '__main__':
         with no_grad():
             print(tr_model(ones((1,3,640,480))).detach().shape)
     jit.save(tr_model, 'models/pan/pant4.pt')
-    ex_inputs = ones(1,3,90,80)
-    print(tr_model)
-    with no_grad():
-        onnx.export(tr_model, ex_inputs, './models/panq.onnx', opset_version=11, export_params=True, operator_export_type=onnx.OperatorExportTypes.ONNX_ATEN_FALLBACK, input_names = ['input'], output_names = ['output'], dynamic_axes={'input' : {0 : 'batch_size', 2 : 'height', 3 : 'width'},'output' : {0 : 'batch_size', 2 : 'height', 3 : 'width'}}, example_outputs=tr_model(ex_inputs), verbose=True)
+    tr_mob_optimized = mobile_optimizer.optimize_for_mobile(tr_model)
+    jit.save(tr_mob_optimized, 'models/pan/pant4opt.pt')
+    # ex_inputs = ones(1,3,90,80)
+    # with no_grad():
+    #     onnx.export(tr_mob_optimized, ex_inputs, './models/panq.onnx', opset_version=11, export_params=True, operator_export_type=onnx.OperatorExportTypes.ONNX_ATEN_FALLBACK, input_names = ['input'], output_names = ['output'], dynamic_axes={'input' : {0 : 'batch_size', 2 : 'height', 3 : 'width'},'output' : {0 : 'batch_size', 2 : 'height', 3 : 'width'}}, example_outputs=tr_model(ex_inputs), verbose=True)
     
