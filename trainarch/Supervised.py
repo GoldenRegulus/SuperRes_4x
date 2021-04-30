@@ -28,13 +28,6 @@ class SuperRes(pl.LightningModule):
         self.logger.experiment.add_scalar('train_loss', loss, self.global_step)
         return loss
     
-    def validation_step(self, batch, batch_idx):
-        x, y = batch
-        x = self.model(x)
-        loss = f.l1_loss(x, y)
-        self.logger.experiment.add_scalar('val_loss', loss, self.global_step)
-        return loss
-    
     def configure_optimizers(self):
         optimizer = optim.AdamW(self.parameters(), lr=self.learning_rate)
         scheduler = {

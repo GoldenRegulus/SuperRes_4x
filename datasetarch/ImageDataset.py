@@ -35,12 +35,9 @@ class SSImageDataset(Dataset):
         return (image, label)
 
 class UnsplashDataset(pl.LightningDataModule):
-    def __init__(self, data, train_split=80000, val_split=7194, test_split=7194, batch_size=16):
+    def __init__(self, data, batch_size=16):
         super().__init__()
         self.data = data
-        self.train_split = train_split
-        self.val_split = val_split
-        self.test_split = test_split
         self.dims = (3, 90, 80)
         self.batch_size = batch_size
         self.mean, self.std = get_mean_std()
@@ -50,23 +47,12 @@ class UnsplashDataset(pl.LightningDataModule):
         ])
 
     def setup(self, stage = None):
-        
         if stage == 'fit' or stage is None:
-            # self.utrainfull = SSImageDataset(self.data[:-self.test_split], self.transforms, self.transforms, True)
-            # self.utrain, self.uval = random_split(self.utrainfull, [self.train_split, self.val_split])
             self.utrainfull = SSImageDataset(self.data, self.transforms, self.transforms, True)
             self.utrain = self.utrainfull
-        # if stage == 'test' or stage is None:
-        #     self.utest = SSImageDataset(self.data[self.test_split:], self.transforms, self.transforms)
     
     def train_dataloader(self) -> DataLoader:
         return DataLoader(self.utrain, self.batch_size, num_workers=4, pin_memory=True)
-    
-    # def val_dataloader(self) -> DataLoader:
-    #     return DataLoader(self.uval, self.batch_size*2, num_workers=4)
-    
-    # def test_dataloader(self) -> DataLoader:
-    #     return DataLoader(self.utest, self.batch_size*2, num_workers=4)
     
     def open_image(self, img_string):
         with Image.open(img_string[0]) as image:

@@ -7,7 +7,7 @@ from modelarch.PAN import PAN
 from trainarch.Supervised import SuperRes
 from pytorch_lightning import Trainer
 from datasetarch.ImageDataset import UnsplashDataset
-from torch import save, load, jit, ones, quantization
+from torch import save, load, jit, ones, quantization, onnx, no_grad
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Train models.')
@@ -21,7 +21,6 @@ if __name__ == '__main__':
     data = np.load('./unsplashlist.npy')
     ds = UnsplashDataset(data, batch_size=16)
     pan = PAN()
-    disc = Discriminator(64)
     lr_callback = callbacks.LearningRateMonitor('step')
     loaded_model_ckpt = ns['checkpoint']
     logdir = ns['logdir']
@@ -31,12 +30,22 @@ if __name__ == '__main__':
         trainer.fit(model, datamodule=ds)
     else:
         if ns['manual_checkpoint']:
-            SuperRes.load_from_checkpoint(ns['manual_checkpoint'], model=pan)
+            model = SuperRes.load_from_checkpoint(ns['manual_checkpoint'], model=pan)
         model = SuperRes(model=pan)
         trainer = Trainer(gpus=1,benchmark=True, max_epochs=340, limit_train_batches=0.01, callbacks=[lr_callback, callbacks.QuantizationAwareTraining(observer_type='histogram', input_compatible=True)], default_root_dir=logdir)
         trainer.fit(model, datamodule=ds) 
     # save(model, 'models/pan/pan4.pt')
-    tr_model = model.to_torchscript()
+    print('Testing: 640x480')
+    for i in range(1):
+        with no_grad():
+            print(model(ones((1,3,640,480))).detach().shape)
+    tr_model = model.to_torchscript(method='trace')
+    for i in range(1):
+        with no_grad():
+            print(tr_model(ones((1,3,640,480))).detach().shape)
     jit.save(tr_model, 'models/pan/pant4.pt')
-    model.to_onnx('./models/panq.onnx', opset_version=12, input_names = ['input'], output_names = ['output'], dynamic_axes={'input' : {0 : 'batch_size', 2 : 'height', 3 : 'width'},'output' : {0 : 'batch_size', 2 : 'height', 3 : 'width'}}, do_constant_folding=True)
+    ex_inputs = ones(1,3,90,80)
+    print(tr_model)
+    with no_grad():
+        onnx.export(tr_model, ex_inputs, './models/panq.onnx', opset_version=11, export_params=True, operator_export_type=onnx.OperatorExportTypes.ONNX_ATEN_FALLBACK, input_names = ['input'], output_names = ['output'], dynamic_axes={'input' : {0 : 'batch_size', 2 : 'height', 3 : 'width'},'output' : {0 : 'batch_size', 2 : 'height', 3 : 'width'}}, example_outputs=tr_model(ex_inputs), verbose=True)
     

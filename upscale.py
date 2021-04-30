@@ -4,7 +4,7 @@ import numpy as np
 import argparse
 import os
 import torch
-from torchvision.transforms import Normalize, Compose, ToTensor, ToPILImage
+from torchvision.transforms import Normalize, ToTensor, ToPILImage
 from utils.utils import unnormalize
 
 _UNSPLASH_MEAN = [0.4257, 0.4211, 0.4025]

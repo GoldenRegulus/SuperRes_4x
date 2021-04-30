@@ -1,5 +1,6 @@
-from torch import nn, sigmoid, cat, quantization
+from torch import nn, sigmoid
 from torch.nn.functional import interpolate
+from torch.nn.quantized import FloatFunctional
 import pytorch_lightning as pl
 
 class SCPA(nn.Module):
@@ -13,8 +14,7 @@ class SCPA(nn.Module):
         self.xd32 = nn.Conv2d(chn//2,chn//2,3,1,1)
         self.xdd3 = nn.Conv2d(chn//2,chn//2,3,1,1)
         self.x1 = nn.Conv2d(chn,chn,1,1,0)
-        self.quant = quantization.QuantStub()
-        self.dequant = quantization.DeQuantStub()
+        self.qf = FloatFunctional()
     
     def forward(self,inp):
         x1 = self.xd1(inp)
@@ -23,25 +23,16 @@ class SCPA(nn.Module):
         x1 = self.xd31(x1)
         x1p = self.xd1p(x1p)
         x1p = sigmoid(x1p)
-        x1 = self.dequant(x1)
-        x1p = self.dequant(x1p)
-        x1 = x1*x1p
-        x1 = self.quant(x1)
+        x1 = self.qf.mul(x1,x1p)
         x1 = self.xd32(x1)
         x1 = self.lrelu(x1)
         x2 = self.xdd1(inp)
         x2 = self.lrelu(x2)
         x2 = self.xdd3(x2)
         x2 = self.lrelu(x2)
-        x1 = self.dequant(x1)
-        x2 = self.dequant(x2)
-        x = cat([x1,x2],dim=1)
-        x = self.quant(x)
+        x = self.qf.cat([x1,x2],dim=1)
         x = self.x1(x)
-        x = self.dequant(x)
-        inp = self.dequant(inp)
-        x = x+inp
-        x = self.quant(x)
+        x = self.qf.add(x,inp)
         return x
 
 class UPA(nn.Module):
@@ -49,26 +40,18 @@ class UPA(nn.Module):
         super().__init__()
         if not hchn:
             hchn = chn
-        # self.xcu = nn.Conv2d(chn, chn*4, 3, 1, 1)
-        # self.xpu = nn.PixelShuffle(2)
         self.xc1 = nn.Conv2d(chn,hchn,3,1,1)
         self.xpa = nn.Conv2d(hchn,hchn,1,1,0)
         self.xc2 = nn.Conv2d(hchn,hchn,3,1,1)
         self.lrelu = nn.LeakyReLU(0.2)
-        self.quant = quantization.QuantStub()
-        self.dequant = quantization.DeQuantStub()
+        self.qf = FloatFunctional()
 
     def forward(self, inp):
         x = interpolate(inp,scale_factor=2.0,mode='nearest')
-        # x = self.xcu(inp)
-        # x = self.xpu(x)
         x = self.xc1(x)
         xp = self.xpa(x)
         xp = sigmoid(xp)
-        xp = self.dequant(xp)
-        x = self.dequant(x)
-        x = xp*x
-        x = self.quant(x)
+        x = self.qf.mul(xp,x)
         x = self.lrelu(x)
         x = self.xc2(x)
         x = self.lrelu(x)
