@@ -74,22 +74,3 @@ class PAN(pl.LightningModule):
         x = self.upa2(x)
         x = self.lastconv(x)
         return x
-
-
-class PANQ(pl.LightningModule):
-    def __init__(self, scpa=16, chn=40, hchn=24):
-        super().__init__()
-        self.firstconv = nn.Conv2d(3,chn,3,1,1)
-        self.scpablocks = nn.ModuleList([SCPA(chn) for _ in range(scpa)])
-        self.upa1 = UPA(chn,hchn)
-        self.upa2 = UPA(hchn)
-        self.lastconv = nn.Conv2d(hchn,3,3,1,1)
-    
-    def forward(self, inp):
-        x = self.firstconv(inp)
-        for block in self.scpablocks:
-            x = block(x)
-        x = self.upa1(x)
-        x = self.upa2(x)
-        x = self.lastconv(x)
-        return x
