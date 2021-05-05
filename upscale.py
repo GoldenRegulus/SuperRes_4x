@@ -3,9 +3,10 @@ from PIL import Image
 import numpy as np
 import argparse
 import os
-import torch
+from torch import load as pload, no_grad
 from torchvision.transforms import Normalize, ToTensor, ToPILImage
 from utils.utils import unnormalize
+from torch.jit import load as jload
 
 _UNSPLASH_MEAN = [0.4257, 0.4211, 0.4025]
 _UNSPLASH_STD = [0.3034, 0.2850, 0.2961]
@@ -16,6 +17,8 @@ parser.add_argument('-o', '--output_path', nargs='?', default='./')
 parser.add_argument('-m', '--model', nargs='?', default='./models/pan.onnx')
 parser.add_argument('-d', '--directory', action='store_true')
 parser.add_argument('-p', '--pytorch', action='store_true', help='Use pytorch .pt model instead of onnx.')
+parser.add_argument('-ts', '--torchscript', action='store_true', help='Use torchscript compiled model instead of onnx.')
+parser.add_argument('-pr', '--prefix', nargs='?', default='UP4x_', help='Prefix to add to end of filename.')
 ns = vars(parser.parse_args())
 if ns['directory']:
     directory = ns['image_path'][0]
@@ -23,16 +26,18 @@ if ns['directory']:
 if not os.path.isdir(ns['output_path']):
     os.mkdir(ns['output_path'])
 if ns['pytorch']:
-    model = torch.load(ns['model'], 'cpu')
+    model = pload(ns['model'], 'cpu')
+if ns['torchscript']:
+    model = jload(ns['model'], 'cpu')
 for i in ns['image_path']:
     img = Image.open(i).convert('RGB')
-    if ns['pytorch']:
+    if ns['pytorch'] or ns['torchscript']:
         img = Normalize(mean=_UNSPLASH_MEAN, std=_UNSPLASH_STD)(ToTensor()(img))
-        with torch.no_grad():
+        with no_grad():
             outs = model(img.unsqueeze(0)).detach()
         outs = unnormalize(outs, _UNSPLASH_MEAN, _UNSPLASH_STD)[0].clamp(0.0, 1.0)
         outs = ToPILImage()(outs)
-        outs.save((ns['output_path'] + 'UP4x_' + i.split('/')[-1]))
+        outs.save((ns['output_path'] + ns['prefix'] + i.split('/')[-1]))
     else:
         img = np.asarray(img)/255.
         img = (img - _UNSPLASH_MEAN) / _UNSPLASH_STD
@@ -43,4 +48,4 @@ for i in ns['image_path']:
         outs = np.moveaxis(outs, 1, -1)[0]
         outs = (outs * _UNSPLASH_STD) + _UNSPLASH_MEAN
         outs = np.clip(outs, 0.0, 1.0) * 255.
-        Image.fromarray(outs.astype(np.uint8)).save((ns['output_path'] + 'UP4x_' + i.split('/')[-1]))
+        Image.fromarray(outs.astype(np.uint8)).save((ns['output_path'] + ns['prefix'] + i.split('/')[-1]))
