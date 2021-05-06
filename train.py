@@ -1,4 +1,6 @@
 import argparse
+
+import torch
 from utils.utils import create_list
 import numpy as np
 from pytorch_lightning import callbacks
@@ -24,12 +26,13 @@ if __name__ == '__main__':
     logdir = ns['logdir']
     if loaded_model_ckpt:
         model = SuperRes.load_from_checkpoint(loaded_model_ckpt, model=pan)
-        trainer = Trainer(resume_from_checkpoint=loaded_model_ckpt, gpus=1, precision=16, benchmark=True, max_epochs=340, callbacks=[lr_callback], default_root_dir=logdir)
-        trainer.fit(model, datamodule=ds)
+        # trainer = Trainer(resume_from_checkpoint=loaded_model_ckpt, gpus=1, precision=16, benchmark=True, max_epochs=340, callbacks=[lr_callback], default_root_dir=logdir)
+        # trainer.fit(model, datamodule=ds)
     else:
         model = SuperRes(model=pan)
         trainer = Trainer(gpus=1, precision=16, benchmark=True, max_epochs=340, callbacks=[lr_callback], default_root_dir=logdir)
         trainer.fit(model, datamodule=ds) 
     save(pan, 'models/pan/pan3.pt')
+    tr_model = model.to_torchscript('models/pan/pant3.pt', method='trace')
     model.to_onnx('./models/pan.onnx', opset_version=11, input_names = ['input'], output_names = ['output'], dynamic_axes={'input' : {0 : 'batch_size', 2 : 'height', 3 : 'width'},'output' : {0 : 'batch_size', 2 : 'height', 3 : 'width'}}, do_constant_folding=True)
     
