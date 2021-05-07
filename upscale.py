@@ -15,7 +15,7 @@ parser.add_argument('image_path', nargs='*', default=[i for i in os.listdir('./'
 parser.add_argument('-o', '--output_path', nargs='?', default='./')
 parser.add_argument('-m', '--model', nargs='?', default='./models/pan.onnx')
 parser.add_argument('-d', '--directory', action='store_true')
-parser.add_argument('-p', '--pytorch', action='store_true', help='Use pytorch .pt model instead of onnx.')
+parser.add_argument('-p', '--pytorch', action='store_true', help='Use TorchScript .pt model instead of onnx.')
 ns = vars(parser.parse_args())
 if ns['directory']:
     directory = ns['image_path'][0]
@@ -23,7 +23,7 @@ if ns['directory']:
 if not os.path.isdir(ns['output_path']):
     os.mkdir(ns['output_path'])
 if ns['pytorch']:
-    model = torch.load(ns['model'], 'cpu')
+    model = torch.jit.load(ns['model'], 'cpu')
 for i in ns['image_path']:
     img = Image.open(i).convert('RGB')
     if ns['pytorch']:
