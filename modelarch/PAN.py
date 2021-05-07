@@ -1,5 +1,7 @@
-from torch import nn, sigmoid, cat
+from torch import nn, sigmoid
 from torch.nn.functional import interpolate
+from torch.nn.quantized import FloatFunctional
+import pytorch_lightning as pl
 
 class SCPA(nn.Module):
     def __init__(self, chn=64):
@@ -12,6 +14,7 @@ class SCPA(nn.Module):
         self.xd32 = nn.Conv2d(chn//2,chn//2,3,1,1)
         self.xdd3 = nn.Conv2d(chn//2,chn//2,3,1,1)
         self.x1 = nn.Conv2d(chn,chn,1,1,0)
+        self.qf = FloatFunctional()
     
     def forward(self,inp):
         x1 = self.xd1(inp)
@@ -20,16 +23,16 @@ class SCPA(nn.Module):
         x1 = self.xd31(x1)
         x1p = self.xd1p(x1p)
         x1p = sigmoid(x1p)
-        x1 = x1*x1p
+        x1 = self.qf.mul(x1,x1p)
         x1 = self.xd32(x1)
         x1 = self.lrelu(x1)
         x2 = self.xdd1(inp)
         x2 = self.lrelu(x2)
         x2 = self.xdd3(x2)
         x2 = self.lrelu(x2)
-        x = cat([x1,x2],dim=1)
+        x = self.qf.cat([x1,x2],dim=1)
         x = self.x1(x)
-        x = x+inp
+        x = self.qf.add(x,inp)
         return x
 
 class UPA(nn.Module):
@@ -41,19 +44,20 @@ class UPA(nn.Module):
         self.xpa = nn.Conv2d(hchn,hchn,1,1,0)
         self.xc2 = nn.Conv2d(hchn,hchn,3,1,1)
         self.lrelu = nn.LeakyReLU(0.2)
+        self.qf = FloatFunctional()
 
     def forward(self, inp):
-        x = interpolate(inp,scale_factor=2,mode='nearest')
+        x = interpolate(inp,scale_factor=2.0,mode='nearest')
         x = self.xc1(x)
         xp = self.xpa(x)
         xp = sigmoid(xp)
-        x = xp*x
+        x = self.qf.mul(xp,x)
         x = self.lrelu(x)
         x = self.xc2(x)
         x = self.lrelu(x)
         return x
 
-class PAN(nn.Module):
+class PAN(pl.LightningModule):
     def __init__(self, scpa=16, chn=40, hchn=24):
         super().__init__()
         self.firstconv = nn.Conv2d(3,chn,3,1,1)
