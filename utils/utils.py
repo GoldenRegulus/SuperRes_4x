@@ -5,6 +5,7 @@ from PIL import Image
 import os
 from skimage.metrics import peak_signal_noise_ratio, structural_similarity
 from torchvision.transforms import ToPILImage, ToTensor, Normalize
+from torch.nn.functional import interpolate
 
 _UNSPLASH_MEAN = [0.4257, 0.4211, 0.4025]
 _UNSPLASH_STD = [0.3034, 0.2850, 0.2961]
@@ -123,10 +124,8 @@ def get_test_images_luma(dir: str, factor: int = 4):
     transform = ToTensor()
     for simg in imgs:
         with Image.open(dir+('' if dir[-1] == '/' else '/')+simg) as img:
-            imgs_in_array.append(transform(downscale(img, factor)))
-        oimg = cv2.imread(dir+('' if dir[-1] == '/' else '/')+simg)
-        oimg = oimg[:((oimg.shape[0]//factor)*factor),:((oimg.shape[1]//factor)*factor),:]
-        imgs_lab_array.append(oimg)
+            imgs_in_array.append(transform(downscale(img, factor).convert('YCbCr'))[0,:,:])
+            imgs_lab_array.append(img.convert('YCbCr'))
     return imgs_in_array, imgs_lab_array
 
 def test_on_folder_luma(dir: str, model):
@@ -134,39 +133,24 @@ def test_on_folder_luma(dir: str, model):
     inps, orig = get_test_images_luma(dir)
 
     crop_border = 4
-    test_Y = True  # True: test Y channel only; False: test RGB channels
 
     PSNR_all = []
     SSIM_all = []
 
     for i in range(len(orig)):
-        im_GT = orig[i]/255.0
-        pred = model(Normalize(mean=_UNSPLASH_MEAN_LUMA, std=_UNSPLASH_STD_LUMA)(inps[i][0,:,:].unsqueeze(0)).unsqueeze(0))
-        im_Gen = np.array(ToPILImage()(unnormalize(pred, _UNSPLASH_MEAN_LUMA, _UNSPLASH_STD_LUMA)[0].clamp(0.0,1.0).cpu())).copy()/255.0
-
-        if test_Y and im_GT.shape[2] == 3:  # evaluate on Y channel in YCbCr color space
-            im_GT_in = bgr2ycbcr(im_GT)
-            # im_Gen_in = bgr2ycbcr(im_Gen)
-            im_Gen_in = im_Gen
-        else:
-            im_GT_in = im_GT
-            im_Gen_in = im_Gen
-
+        im_GT = np.array(orig[i])/255.0
+        im_GT = im_GT[:((im_GT.shape[0]//4)*4),:((im_GT.shape[1]//4)*4),:]
+        with torch.no_grad():
+            pred = model(Normalize(mean=_UNSPLASH_MEAN_LUMA, std=_UNSPLASH_STD_LUMA)(inps[i][None,None,:,:]))
+        im_Gen = unnormalize(pred, _UNSPLASH_MEAN_LUMA, _UNSPLASH_STD_LUMA)[0].clamp(0.0,1.0).cpu().numpy().transpose(1,2,0).copy()
         # crop borders
-        if im_GT_in.ndim == 3:
-            cropped_GT = im_GT_in[crop_border:-crop_border, crop_border:-crop_border, :]
-            # cropped_Gen = im_Gen_in[crop_border:-crop_border, crop_border:-crop_border, :]
-            cropped_Gen = im_Gen_in[crop_border:-crop_border, crop_border:-crop_border]
-        elif im_GT_in.ndim == 2:
-            cropped_GT = im_GT_in[crop_border:-crop_border, crop_border:-crop_border]
-            cropped_Gen = im_Gen_in[crop_border:-crop_border, crop_border:-crop_border]
-        else:
-            raise ValueError('Wrong image dimension: {}. Should be 2 or 3.'.format(im_GT_in.ndim))
+        cropped_GT = im_GT[crop_border:-crop_border, crop_border:-crop_border, 0]
+        cropped_Gen = im_Gen[crop_border:-crop_border, crop_border:-crop_border, 0]
         # calculate PSNR and SSIM
         # psnr = PSNR(cropped_GT * 255, cropped_Gen * 255)
         # ssim = SSIM(cropped_GT * 255, cropped_Gen * 255)
         psnr = peak_signal_noise_ratio(cropped_GT, cropped_Gen, data_range=1.0)
-        ssim = structural_similarity(cropped_GT, cropped_Gen, gaussian_weights=True, sigma=1.5, multichannel=True, data_range=1.0)
+        ssim = structural_similarity(cropped_GT, cropped_Gen, gaussian_weights=True, sigma=1.5, multichannel=False, data_range=1.0)
         PSNR_all.append(psnr)
         SSIM_all.append(ssim)
     # print('{}: PSNR: {:.4f} dB, SSIM: {:.4f}'.format(dir.split('/')[-1], sum(PSNR_all) / len(PSNR_all), sum(SSIM_all) / len(SSIM_all)))

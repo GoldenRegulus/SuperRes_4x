@@ -106,7 +106,7 @@ class DivDataset(pl.LightningDataModule):
             self.utrain = self.utrainfull
     
     def train_dataloader(self) -> DataLoader:
-        return DataLoader(self.utrain, self.batch_size, num_workers=4, pin_memory=True)
+        return DataLoader(self.utrain, self.batch_size, num_workers=5, pin_memory=True)
     
     def open_image(self, img_string):
         with Image.open(img_string[0]) as image:

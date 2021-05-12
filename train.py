@@ -87,6 +87,7 @@ if __name__ == '__main__':
     parser.add_argument('-ld', '--logdir', nargs='?', default='./panlogs2/', help='Checkpoint logging directory for tensorboard')
     parser.add_argument('-nt', '--no_train', action='store_true', help='Skip main training loop')
     parser.add_argument('-j', '--jit', action='store_true', help='Compile and save model in TorchScript')
+    parser.add_argument('-ox', '--onnx', action='store_true', help='Compile and save model in ONNX')
     parser.add_argument('-q', '--quantize', action='store_true', help='Quantize model (int8). Note: Enabling this will override --jit')
     parser.add_argument('-mo', '--mobile_optimize', action='store_true', help='Apply mobile optimizations to TorchScript model. Note: Enabling this will override --jit')
     parser.add_argument('-ms', '--manual_savepoint', nargs='?', default='models/pan/', help='Path to directory to which model(s) will be saved')
@@ -94,7 +95,7 @@ if __name__ == '__main__':
     if ns['recreate_list']:
         create_list()
     data = np.load('./unsplashlist.npy')
-    ds = UnsplashDataset(data, batch_size=32)
+    ds = UnsplashDataset(data, batch_size=8)
     pan = PAN()
     lr_callback = callbacks.LearningRateMonitor('step')
     loaded_model_ckpt = ns['checkpoint']
@@ -102,16 +103,19 @@ if __name__ == '__main__':
     if loaded_model_ckpt:
         model = SuperRes.load_from_checkpoint(loaded_model_ckpt, model=pan)
         if not ns['no_train']:
-            trainer = Trainer(resume_from_checkpoint=loaded_model_ckpt, gpus=1, benchmark=True, max_epochs=50, callbacks=[lr_callback, callbacks.StochasticWeightAveraging(swa_lrs=0.05, swa_epoch_start=0.6, annealing_epochs=2)], default_root_dir=logdir)
+            trainer = Trainer(resume_from_checkpoint=loaded_model_ckpt, gpus=1, benchmark=True, max_epochs=20, callbacks=[lr_callback], default_root_dir=logdir)
             trainer.fit(model, datamodule=ds)
     else:
         if ns['manual_checkpoint']:
-            pan.load_state_dict({k:v for k, v in load(ns['manual_checkpoint']).state_dict().items() if k in pan.state_dict()})
+            model_dict = pan.state_dict()
+            pretrained_dict = {k:v for k, v in load(ns['manual_checkpoint']).state_dict().items() if (k in model_dict and (v.shape == model_dict[k].shape))}
+            model_dict.update(pretrained_dict)
+            pan.load_state_dict(model_dict, strict=False)
         model = SuperRes(model=pan)
         if not ns['no_train']:
-            trainer = Trainer(gpus=1,benchmark=True, max_epochs=50, callbacks=[lr_callback, callbacks.StochasticWeightAveraging(swa_lrs=0.05, swa_epoch_start=0.6, annealing_epochs=2)], default_root_dir=logdir)
+            trainer = Trainer(gpus=1,benchmark=True, max_epochs=20, callbacks=[lr_callback], default_root_dir=logdir, accumulate_grad_batches=4)
             trainer.fit(model, datamodule=ds) 
-    save(pan, ns['manual_savepoint']+'pan6.pt')
+    save(pan, ns['manual_savepoint']+'pan62.pt')
     if ns['quantize']:
         print('Quantization Aware Finetuning:')
         prep_quantize(pan)
@@ -120,12 +124,14 @@ if __name__ == '__main__':
     print('Testing:')
     with no_grad():
         ToPILImage()(unnormalize(pan(Normalize(mean=mean, std=std)(ToTensor()(Image.open('testimgs/Set5/baby.png').convert('YCbCr'))[0,:,:].unsqueeze(0)).unsqueeze(0)), mean, std)[0].clamp(0.0,1.0)).show()
-    ex_inputs = ones(1,3,90,80)
+    ex_inputs = ones(1,1,90,80)
     if ns['jit'] or ns['mobile_optimize'] or ns['quantize']:
         tr_model = pan.to_torchscript(method='trace', example_inputs=ex_inputs)
         with no_grad():
             ToPILImage()(unnormalize(tr_model(Normalize(mean=mean, std=std)(ToTensor()(Image.open('testimgs/Set5/baby.png').convert('YCbCr'))[0,:,:].unsqueeze(0)).unsqueeze(0)), mean, std)[0].clamp(0.0,1.0)).show()
-        jit.save(tr_model, ns['manual_savepoint']+'pant6.pt')
+        jit.save(tr_model, ns['manual_savepoint']+'pant62.pt')
     if ns['mobile_optimize']:
         tr_mob_optimized = mobile_optimizer.optimize_for_mobile(tr_model)
-        jit.save(tr_mob_optimized, ns['manual_savepoint']+'pant6opt.pt')
+        jit.save(tr_mob_optimized, ns['manual_savepoint']+'pant62opt.pt')
+    if ns['onnx']:
+        on_model = pan.to_onnx(ns['manual_savepoint']+'pan62.onnx', ex_inputs, opset_version=12, input_names=['input'], output_names=['output'], dynamic_axes={'input': {0:'batch', 2:'height', 3:'width'}, 'output': {0:'batch', 2:'height', 3:'width'}})
