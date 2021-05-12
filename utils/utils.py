@@ -5,12 +5,18 @@ from PIL import Image
 import os
 from skimage.metrics import peak_signal_noise_ratio, structural_similarity
 from torchvision.transforms import ToPILImage, ToTensor, Normalize
+from torch.nn.functional import interpolate
 
 _UNSPLASH_MEAN = [0.4257, 0.4211, 0.4025]
 _UNSPLASH_STD = [0.3034, 0.2850, 0.2961]
+_UNSPLASH_MEAN_LUMA = [0.41846699]
+_UNSPLASH_STD_LUMA = [0.28337935]
 
 def get_mean_std():
     return _UNSPLASH_MEAN, _UNSPLASH_STD
+
+def get_mean_std_luma():
+    return _UNSPLASH_MEAN_LUMA, _UNSPLASH_STD_LUMA
 
 def unnormalize(x, mean, std):
     return ((x * torch.Tensor(std).type_as(x)[None,:,None,None]) + torch.Tensor(mean).type_as(x)[None,:,None,None])
@@ -64,7 +70,7 @@ def get_test_images(dir: str, factor: int = 4):
     transform = ToTensor()
     for simg in imgs:
         with Image.open(dir+('' if dir[-1] == '/' else '/')+simg) as img:
-            imgs_in_array.append(transform(downscale(img, factor)))
+            imgs_in_array.append(transform(downscale(img, factor))[0,:,:].unsqueeze(0))
         oimg = cv2.imread(dir+('' if dir[-1] == '/' else '/')+simg)
         oimg = oimg[:((oimg.shape[0]//factor)*factor),:((oimg.shape[1]//factor)*factor),:]
         imgs_lab_array.append(oimg)
@@ -110,6 +116,45 @@ def test_on_folder(dir: str, model):
         PSNR_all.append(psnr)
         SSIM_all.append(ssim)
     print('{}: PSNR: {:.4f} dB, SSIM: {:.4f}'.format(dir.split('/')[-1], sum(PSNR_all) / len(PSNR_all), sum(SSIM_all) / len(SSIM_all)))
+
+def get_test_images_luma(dir: str, factor: int = 4):
+    imgs = os.listdir(dir)
+    imgs_in_array = []
+    imgs_lab_array = []
+    transform = ToTensor()
+    for simg in imgs:
+        with Image.open(dir+('' if dir[-1] == '/' else '/')+simg) as img:
+            imgs_in_array.append(transform(downscale(img, factor).convert('YCbCr'))[0,:,:])
+            imgs_lab_array.append(img.convert('YCbCr'))
+    return imgs_in_array, imgs_lab_array
+
+def test_on_folder_luma(dir: str, model):
+    # model.to('cuda:0')
+    inps, orig = get_test_images_luma(dir)
+
+    crop_border = 4
+
+    PSNR_all = []
+    SSIM_all = []
+
+    for i in range(len(orig)):
+        im_GT = np.array(orig[i])/255.0
+        im_GT = im_GT[:((im_GT.shape[0]//4)*4),:((im_GT.shape[1]//4)*4),:]
+        with torch.no_grad():
+            pred = model(Normalize(mean=_UNSPLASH_MEAN_LUMA, std=_UNSPLASH_STD_LUMA)(inps[i][None,None,:,:]))
+        im_Gen = unnormalize(pred, _UNSPLASH_MEAN_LUMA, _UNSPLASH_STD_LUMA)[0].clamp(0.0,1.0).cpu().numpy().transpose(1,2,0).copy()
+        # crop borders
+        cropped_GT = im_GT[crop_border:-crop_border, crop_border:-crop_border, 0]
+        cropped_Gen = im_Gen[crop_border:-crop_border, crop_border:-crop_border, 0]
+        # calculate PSNR and SSIM
+        # psnr = PSNR(cropped_GT * 255, cropped_Gen * 255)
+        # ssim = SSIM(cropped_GT * 255, cropped_Gen * 255)
+        psnr = peak_signal_noise_ratio(cropped_GT, cropped_Gen, data_range=1.0)
+        ssim = structural_similarity(cropped_GT, cropped_Gen, gaussian_weights=True, sigma=1.5, multichannel=False, data_range=1.0)
+        PSNR_all.append(psnr)
+        SSIM_all.append(ssim)
+    # print('{}: PSNR: {:.4f} dB, SSIM: {:.4f}'.format(dir.split('/')[-1], sum(PSNR_all) / len(PSNR_all), sum(SSIM_all) / len(SSIM_all)))
+    return (sum(PSNR_all) / len(PSNR_all), sum(SSIM_all) / len(SSIM_all))
 
 def create_list():
     l720 = ['./Unsplash/720/'+i for i in os.listdir('./Unsplash/720/')]
